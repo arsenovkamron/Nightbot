@@ -10,9 +10,9 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ---------------- CONFIG ----------------
-TOKEN = os.getenv("8524199343:AAH0wOdKcq1oWvb7UATTujTXztdlY_zXZUU")
-ADMIN_ID = int(os.getenv("7468497968", "0"))
-CHANNEL_ID = int(os.getenv("-1003634580685", "0"))
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 
 logging.basicConfig(level=logging.INFO)
 
