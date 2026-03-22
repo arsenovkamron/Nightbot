@@ -1,4 +1,4 @@
-import asyncio
+цimport asyncio
 import random
 import time
 import logging
@@ -65,7 +65,8 @@ async def start(message: Message):
 
 🤖 Добро пожаловать!
 
-Я управляю розыгрышами в этом канале.
+Я управляю розыгрышами на канале @ItsNightmare1337.
+Меня создал @arsen_kamron.
 
 ⚡ Участвуй в постах и выигрывай призы!
 """)
