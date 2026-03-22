@@ -1,4 +1,4 @@
-цimport asyncio
+import asyncio
 import random
 import time
 import logging
