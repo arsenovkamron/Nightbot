@@ -1,19 +1,27 @@
 import os
 import asyncio
 import sqlite3
+import random
 from datetime import datetime, timedelta
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 API_TOKEN = os.getenv("BOT_TOKEN")
 
-# 🔥 список каналов через запятую
-CHANNELS = list(map(int, os.getenv("CHANNELS", "").split(",")))
+# 🔥 каналы (можешь менять названия)
+-1003856582918: "🔥 ItsNightmare1337",
+   -1003591733345: "🤝 killer_586",
+}
 
-bot = Bot(token=API_TOKEN, parse_mode="HTML")
-dp = Dispatcher(bot)
+bot = Bot(
+    token=API_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
+
+dp = Dispatcher()
 
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
@@ -39,16 +47,20 @@ giveaway_messages = []
 
 
 # ======================
-# КНОПКА
+# КНОПКИ
 # ======================
 def join_kb():
     buttons = []
 
-    for channel in CHANNELS:
-        link = f"https://t.me/{str(channel).replace('-100','')}"
-        buttons.append([InlineKeyboardButton(text="📢 Подписаться", url=link)])
+    for channel_id, name in CHANNELS.items():
+        link = f"https://t.me/{str(channel_id).replace('-100','')}"
+        buttons.append([
+            InlineKeyboardButton(text=name, url=link)
+        ])
 
-    buttons.append([InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")])
+    buttons.append([
+        InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")
+    ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -58,8 +70,8 @@ def join_kb():
 # ======================
 async def is_subscribed(user_id: int):
     try:
-        for channel in CHANNELS:
-            member = await bot.get_chat_member(channel, user_id)
+        for channel_id in CHANNELS.keys():
+            member = await bot.get_chat_member(channel_id, user_id)
             if member.status not in ("member", "administrator", "creator"):
                 return False
         return True
@@ -78,28 +90,30 @@ def format_time(seconds):
 
 
 # ======================
-# СТАРТ
+# /start
 # ======================
-@dp.message_handler(commands=["start"])
-async def start(msg: types.Message):
-    await msg.answer("Привет 👋")
+@dp.message(F.text == "/start")
+async def start(message: Message):
+    await message.answer("Привет 👋")
 
 
 # ======================
-# СОЗДАНИЕ РОЗЫГРЫША
+# GIVEAWAY
 # ======================
-@dp.message_handler(commands=["giveaway"])
-async def giveaway(msg: types.Message):
+@dp.message(F.text.startswith("/giveaway"))
+async def giveaway(message: Message):
     try:
-        args = msg.text.split("|")
+        args = message.text.split("|")
 
-        text = args[1]
+        text = args[1].strip()
         winners = int(args[2])
         minutes = int(args[3])
 
         end_time = datetime.now() + timedelta(minutes=minutes)
 
         cur.execute("DELETE FROM giveaway")
+        cur.execute("DELETE FROM users")
+
         cur.execute(
             "INSERT INTO giveaway (text, winners, end_time) VALUES (?, ?, ?)",
             (text, winners, end_time.isoformat())
@@ -109,11 +123,10 @@ async def giveaway(msg: types.Message):
         global giveaway_messages
         giveaway_messages = []
 
-        # отправка во все каналы
-        for channel in CHANNELS:
-            m = await bot.send_message(
-                channel,
-                f"""
+        for channel in CHANNELS.keys():
+            msg = await bot.send_message(
+                chat_id=channel,
+                text=f"""
 🌙 <b>GIVEAWAY</b>
 
 {text}
@@ -124,20 +137,20 @@ async def giveaway(msg: types.Message):
                 reply_markup=join_kb()
             )
 
-            giveaway_messages.append((channel, m.message_id))
+            giveaway_messages.append((channel, msg.message_id))
 
-        await msg.answer("✅ Розыгрыш запущен")
+        await message.answer("✅ Розыгрыш запущен")
 
     except Exception as e:
-        await msg.answer("Ошибка ❌")
+        await message.answer("Ошибка ❌")
         print(e)
 
 
 # ======================
-# УЧАСТИЕ
+# JOIN
 # ======================
-@dp.callback_query_handler(lambda c: c.data == "join")
-async def join(call: types.CallbackQuery):
+@dp.callback_query(F.data == "join")
+async def join(call: CallbackQuery):
     if not await is_subscribed(call.from_user.id):
         await call.answer("Подпишись на все каналы ❌", show_alert=True)
         return
@@ -149,7 +162,7 @@ async def join(call: types.CallbackQuery):
 
 
 # ======================
-# ОБНОВЛЕНИЕ
+# LOOP
 # ======================
 async def loop():
     while True:
@@ -165,13 +178,27 @@ async def loop():
 
         remaining = int((end_time - datetime.now()).total_seconds())
 
-        count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        # 🔥 анти-отписка
+        users_db = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+        valid_users = []
+
+        for user_id in users_db:
+            if await is_subscribed(user_id):
+                valid_users.append(user_id)
+            else:
+                cur.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+
+        db.commit()
+
+        count = len(valid_users)
 
         # обновление сообщений
         for channel, msg_id in giveaway_messages:
             try:
                 await bot.edit_message_text(
-                    f"""
+                    chat_id=channel,
+                    message_id=msg_id,
+                    text=f"""
 🌙 <b>GIVEAWAY</b>
 
 {text}
@@ -180,8 +207,6 @@ async def loop():
 👥 Участников: {count}
 🏆 Победителей: {winners}
 """,
-                    channel,
-                    msg_id,
                     reply_markup=join_kb()
                 )
             except:
@@ -189,18 +214,15 @@ async def loop():
 
         # завершение
         if remaining <= 0:
-            users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+            if valid_users:
+                winners_list = random.sample(valid_users, min(len(valid_users), winners))
 
-            if users:
-                import random
-                winners_list = random.sample(users, min(len(users), winners))
-
-                text_win = "🏆 <b>ПОБЕДИТЕЛИ</b>\n\n" + "\n".join(
+                result = "🏆 <b>ПОБЕДИТЕЛИ</b>\n\n" + "\n".join(
                     [f"<a href='tg://user?id={u}'>Пользователь</a>" for u in winners_list]
                 )
 
-                for channel in CHANNELS:
-                    await bot.send_message(channel, text_win)
+                for channel in CHANNELS.keys():
+                    await bot.send_message(channel, result)
 
             cur.execute("DELETE FROM giveaway")
             cur.execute("DELETE FROM users")
@@ -208,8 +230,12 @@ async def loop():
 
 
 # ======================
-# ЗАПУСК
+# MAIN
 # ======================
+async def main():
+    asyncio.create_task(loop())
+    await dp.start_polling(bot)
+
+
 if __name__ == "__main__":
-    loop_task = asyncio.get_event_loop().create_task(loop())
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
