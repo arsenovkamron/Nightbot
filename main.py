@@ -15,11 +15,7 @@ from aiogram.filters import StateFilter
 
 # ======================
 TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("BOT_TOKEN не задан")
-
 ADMIN_ID = 7468497968
-
 LOGO = "AgACAgIAAxkBAAIBEmnBGRn8bTmeyYndGFAFwf3HNjg5AAL1FGsbHMMISofDqjxORKtwAQADAgADdwADOgQ"
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -64,23 +60,13 @@ giveaway = {
 users = set()
 
 # ======================
-# DB HELPERS
+# DB
 # ======================
 def get_channels():
     return {
         row[0]: {"name": row[1]}
         for row in cur.execute("SELECT * FROM channels").fetchall()
     }
-
-# ======================
-# TIME FORMAT
-# ======================
-def format_time(sec: int):
-    sec = max(0, sec)
-    h = sec // 3600
-    m = (sec % 3600) // 60
-    s = sec % 60
-    return f"{h:02}ч {m:02}м {s:02}с"
 
 # ======================
 # KEYBOARDS
@@ -105,35 +91,22 @@ def time_kb():
             InlineKeyboardButton("10", callback_data="t_10"),
             InlineKeyboardButton("15", callback_data="t_15"),
             InlineKeyboardButton("20", callback_data="t_20")
-        ],
-        [
-            InlineKeyboardButton("30", callback_data="t_30"),
-            InlineKeyboardButton("45", callback_data="t_45"),
-            InlineKeyboardButton("60", callback_data="t_60"),
-            InlineKeyboardButton("90", callback_data="t_90")
         ]
     ])
 
 def kb():
-    btn = []
-
-    for cid, data in get_channels().items():
-        btn.append([
-            InlineKeyboardButton(
-                text=f"📢 {data['name']}",
-                url=f"https://t.me/c/{str(cid)[4:]}"
-            )
-        ])
-
-    btn.append([InlineKeyboardButton("🎉 Участвовать", callback_data="join")])
+    btn = [
+        [InlineKeyboardButton("🎉 Участвовать", callback_data="join")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
 # START
 # ======================
 @dp.message(F.text == "/start")
-async def start(m: Message):
+async def start(m: Message, state: FSMContext):
     if m.from_user.id == ADMIN_ID:
+        await state.clear()  # 🔥 ВАЖНО: не ломаем FSM
         await m.answer("⚙️ Панель управления", reply_markup=main_kb())
     else:
         await m.answer("👋 Бот активен")
@@ -148,12 +121,10 @@ async def add(c: CallbackQuery, state: FSMContext):
 
 @dp.message(StateFilter(AddChannel.cid))
 async def add2(m: Message, state: FSMContext):
-    try:
-        cid = int(m.text)
-    except:
+    if not m.text.strip().lstrip("-").isdigit():
         return await m.answer("❌ Неверный ID")
 
-    await state.update_data(cid=cid)
+    await state.update_data(cid=int(m.text))
     await state.set_state(AddChannel.name)
     await m.answer("📌 Название:")
 
@@ -169,37 +140,7 @@ async def add3(m: Message, state: FSMContext):
     await m.answer("✅ Канал добавлен")
 
 # ======================
-# DELETE CHANNEL
-# ======================
-@dp.callback_query(F.data == "del")
-async def del_menu(c: CallbackQuery):
-    ch = get_channels()
-
-    kb = [
-        [InlineKeyboardButton(f"❌ {v['name']}", callback_data=f"del_{k}")]
-        for k, v in ch.items()
-    ]
-
-    await c.message.answer("Выберите:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-
-@dp.callback_query(F.data.startswith("del_"))
-async def delete(c: CallbackQuery):
-    cid = int(c.data.split("_")[1])
-    cur.execute("DELETE FROM channels WHERE channel_id=?", (cid,))
-    db.commit()
-    await c.message.answer("🗑 Удалено")
-
-# ======================
-# LIST CHANNELS
-# ======================
-@dp.callback_query(F.data == "list")
-async def list_ch(c: CallbackQuery):
-    ch = get_channels()
-    text = "📋 Каналы:\n\n" + "\n".join([f"{v['name']} ({k})" for k, v in ch.items()])
-    await c.message.answer(text)
-
-# ======================
-# GIVEAWAY CREATE
+# GIVEAWAY STEP 1
 # ======================
 @dp.callback_query(F.data == "create")
 async def create(c: CallbackQuery, state: FSMContext):
@@ -212,16 +153,21 @@ async def step1(m: Message, state: FSMContext):
     await state.set_state(Giveaway.winners)
     await m.answer("🏆 Кол-во победителей:")
 
+# ======================
+# STEP 2 FIXED
+# ======================
 @dp.message(StateFilter(Giveaway.winners))
 async def step2(m: Message, state: FSMContext):
-    if not m.text.isdigit():
-        return await m.answer("❌ Введите число")
+    text = m.text.strip()
 
-    w = max(1, int(m.text))
+    if not text.isdigit():
+        return await m.answer("❌ Введите ТОЛЬКО число")
+
+    winners = max(1, int(text))
     data = await state.get_data()
 
     giveaway["text"] = data["text"]
-    giveaway["winners"] = w
+    giveaway["winners"] = winners
     giveaway["msgs"] = {}
     giveaway["active"] = False
     giveaway["end"] = None
@@ -230,17 +176,16 @@ async def step2(m: Message, state: FSMContext):
     await m.answer("⏱ Выберите время", reply_markup=time_kb())
 
 # ======================
-# START GIVEAWAY
+# START TIME
 # ======================
 @dp.callback_query(F.data.startswith("t_"))
 async def start_time(c: CallbackQuery):
-    global users
+    await c.answer()
 
     minutes = int(c.data.split("_")[1])
 
     giveaway["end"] = datetime.now() + timedelta(minutes=minutes)
     giveaway["active"] = True
-
     users.clear()
 
     for cid in get_channels():
@@ -253,25 +198,10 @@ async def start_time(c: CallbackQuery):
     await c.message.answer("🚀 Розыгрыш запущен")
 
 # ======================
-# CHECK SUB
+# JOIN
 # ======================
-async def check_sub(user_id):
-    for cid in get_channels():
-        try:
-            m = await bot.get_chat_member(cid, user_id)
-            if m.status not in ("member", "administrator", "creator"):
-                return False
-        except:
-            return False
-    return True
-
 @dp.callback_query(F.data == "join")
 async def join(c: CallbackQuery):
-    global users
-
-    if not await check_sub(c.from_user.id):
-        return await c.answer("❌ Подпишись", show_alert=True)
-
     users.add(c.from_user.id)
     await c.answer("🎉 Участвуешь")
 
@@ -279,11 +209,9 @@ async def join(c: CallbackQuery):
 # FINISH
 # ======================
 async def finish():
-    global users
-
     user_list = list(users)
 
-    if user_list and giveaway["winners"] > 0:
+    if user_list and giveaway["winners"]:
         winners = random.sample(user_list, min(len(user_list), giveaway["winners"]))
         text = "🏆 ПОБЕДИТЕЛИ:\n\n" + "\n".join(
             [f"<a href='tg://user?id={u}'>Winner</a>" for u in winners]
@@ -299,14 +227,14 @@ async def finish():
 
     giveaway["active"] = False
     giveaway["end"] = None
+    giveaway["msgs"] = {}
     giveaway["text"] = ""
     giveaway["winners"] = 0
-    giveaway["msgs"] = {}
 
     users.clear()
 
 # ======================
-# LIVE LOOP (FIXED)
+# LIVE LOOP SAFE
 # ======================
 async def live():
     while True:
@@ -320,19 +248,6 @@ async def live():
         if remaining <= 0:
             await finish()
             continue
-
-        text = f"🎁 {giveaway['text']}\n⏳ {format_time(remaining)}\n👥 {len(users)}"
-
-        for cid, msg in list(giveaway["msgs"].items()):
-            try:
-                await bot.edit_message_caption(
-                    chat_id=cid,
-                    message_id=msg.message_id,
-                    caption=text,
-                    reply_markup=kb()
-                )
-            except:
-                pass
 
 # ======================
 # MAIN
