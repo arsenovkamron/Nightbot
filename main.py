@@ -10,10 +10,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 API_TOKEN = os.getenv("BOT_TOKEN")
-
+CHANNELS = {
 # 🔥 каналы (можешь менять названия)
--1003856582918: "🔥 ItsNightmare1337",
-   -1003591733345: "🤝 killer_586",
+-1003856582918:"🔥 ItsNightmare1337",
+   -1003591733345:"🤝 killer_586",
 }
 
 bot = Bot(
