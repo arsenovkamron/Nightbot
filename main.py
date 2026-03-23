@@ -13,7 +13,7 @@ API_TOKEN = os.getenv("BOT_TOKEN")
 # 🔥 каналы (можешь менять названия)
 CHANNELS = {
 -1003856582918:"🔥 ItsNightmare1337",
-   -1003591733345:"🤝 killer_586",
+   -1003794532196:"🤝 killer_586",
 }
 
 bot = Bot(
