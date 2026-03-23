@@ -9,18 +9,24 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+# ======================
+# TOKEN
+# ======================
 TOKEN = os.getenv("BOT_TOKEN")
 
-# 📸 LOGO (file_id вставишь сюда)
+# 📸 LOGO (сюда вставишь file_id)
 LOGO = ""
 
-# 📢 КАНАЛЫ
+# 📢 CHANNELS ULTRA
 CHANNELS = {
     -1001234567890: "🔥 Основной канал",
     -1009876543210: "🤝 Партнёр",
     -1001111111111: "📢 Новости"
 }
 
+# ======================
+# BOT INIT
+# ======================
 bot = Bot(
     token=TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -28,6 +34,9 @@ bot = Bot(
 
 dp = Dispatcher()
 
+# ======================
+# DB
+# ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
 
@@ -40,24 +49,39 @@ db.commit()
 
 
 # ======================
+# FILE ID GETTER (ВАЖНО)
+# ======================
+@dp.message(F.photo)
+async def get_file_id(message: Message):
+    file_id = message.photo[-1].file_id
+    await message.answer(f"📸 FILE_ID:\n\n<code>{file_id}</code>")
+
+
+# ======================
+# HELP TEST
+# ======================
+@dp.message()
+async def test(message: Message):
+    if message.text == "/test":
+        await message.answer("✅ Nightbot работает")
+
+
+# ======================
 # LINK BUILDER
 # ======================
-def get_link(channel_id: int):
-    return f"https://t.me/c/{str(channel_id)[4:]}"
+def get_link(cid: int):
+    return f"https://t.me/c/{str(cid)[4:]}"
 
 
 # ======================
-# KEYBOARD (ULTRA UI)
+# KEYBOARD
 # ======================
 def kb():
     buttons = []
 
     for cid, name in CHANNELS.items():
         buttons.append([
-            InlineKeyboardButton(
-                text=f"📢 {name}",
-                url=get_link(cid)
-            )
+            InlineKeyboardButton(text=f"📢 {name}", url=get_link(cid))
         ])
 
     buttons.append([
@@ -65,7 +89,7 @@ def kb():
     ])
 
     buttons.append([
-        InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check_sub")
+        InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check")
     ])
 
     buttons.append([
@@ -93,12 +117,12 @@ async def is_subscribed(user_id: int):
 
 
 # ======================
-# JOIN (ANTI CHEAT)
+# JOIN
 # ======================
 @dp.callback_query(F.data == "join")
 async def join(call: CallbackQuery):
     if not await is_subscribed(call.from_user.id):
-        await call.answer("❌ Сначала подпишись на каналы!", show_alert=True)
+        await call.answer("❌ Подпишись на все каналы!", show_alert=True)
         return
 
     cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
@@ -108,17 +132,16 @@ async def join(call: CallbackQuery):
 
 
 # ======================
-# CHECK BUTTON (ULTRA 3)
+# CHECK BUTTON
 # ======================
-@dp.callback_query(F.data == "check_sub")
+@dp.callback_query(F.data == "check")
 async def check(call: CallbackQuery):
     if await is_subscribed(call.from_user.id):
         cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
         db.commit()
-
         await call.answer("✅ Подписка подтверждена!", show_alert=True)
     else:
-        await call.answer("❌ Подпишись на все каналы!", show_alert=True)
+        await call.answer("❌ Подпишись на каналы!", show_alert=True)
 
 
 # ======================
@@ -191,11 +214,11 @@ async def live():
             if users_list:
                 winners = random.sample(users_list, min(len(users_list), giveaway["winners"]))
 
-                text = "🏆 <b>NIGHTBOT WINNERS</b>\n\n" + "\n".join(
+                result = "🏆 <b>NIGHTBOT WINNERS</b>\n\n" + "\n".join(
                     [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
                 )
 
-                await bot.send_message(giveaway["msg"].chat.id, text)
+                await bot.send_message(giveaway["msg"].chat.id, result)
 
             cur.execute("DELETE FROM users")
             db.commit()
@@ -218,7 +241,7 @@ async def giveaway_cmd(message: Message):
         db.commit()
 
         msg = await message.answer_photo(
-            photo=LOGO,
+            photo=LOGO if LOGO else "https://i.imgur.com/8Km9tLL.jpg",
             caption="🌙 <b>NIGHTBOT</b>\n⏳ Загрузка...",
             reply_markup=kb()
         )
@@ -234,12 +257,12 @@ async def giveaway_cmd(message: Message):
         await message.answer("🚀 Giveaway запущен")
 
     except Exception as e:
-        await message.answer("❌ Ошибка")
+        await message.answer("❌ Ошибка формата:\n/giveaway|текст|победители|минуты")
         print(e)
 
 
 # ======================
-# START BOT
+# MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
@@ -248,8 +271,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-@dp.message(F.photo)
-async def get_file_id(message: Message):
-    file_id = message.photo[-1].file_id
-    await message.answer(f"📸 FILE_ID:\n\n<code>{file_id}</code>")
