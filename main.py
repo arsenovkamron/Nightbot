@@ -23,8 +23,8 @@ LOGO = "AgACAgIAAxkBAAIBEmnBGRn8bTmeyYndGFAFwf3HNjg5AAL1FGsbHMMISofDqjxORKtwAQAD
 
 # ⚠️ ВАЖНО: бот должен быть админом в этих каналах
 CHANNELS = {
-    -1003856582918: {"name": "ItsNightmare1337"},
-    -1003794532196: {"name": "killer_586"},
+    -1003856582918: {"ItsNightmare1337": "ItsNightmare1337"},
+    -1003794532196: {"killer_586": "killer_586"},
 }
 
 # ======================
