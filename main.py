@@ -81,10 +81,10 @@ def format_time(sec: int):
 # ======================
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton("🎁 Розыгрыш", callback_data="create")],
-        [InlineKeyboardButton("➕ Канал", callback_data="add")],
-        [InlineKeyboardButton("❌ Удалить канал", callback_data="del")],
-        [InlineKeyboardButton("📋 Каналы", callback_data="list")]
+        [InlineKeyboardButton(text="🎁 Розыгрыш", callback_data="create")],
+        [InlineKeyboardButton(text="➕ Канал", callback_data="add")],
+        [InlineKeyboardButton(text="❌ Удалить", callback_data="del")],
+        [InlineKeyboardButton(text="📋 Каналы", callback_data="list")]
     ])
 
 def time_kb():
@@ -110,7 +110,6 @@ def time_kb():
 
 def kb():
     btn = []
-
     for cid, data in get_channels().items():
         btn.append([
             InlineKeyboardButton(
@@ -120,8 +119,6 @@ def kb():
         ])
 
     btn.append([InlineKeyboardButton("🎉 Участвовать", callback_data="join")])
-    btn.append([InlineKeyboardButton("🔄 Проверка", callback_data="check")])
-
     return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
@@ -130,7 +127,7 @@ def kb():
 @dp.message(F.text == "/start")
 async def start(m: Message):
     if m.from_user.id == ADMIN_ID:
-        await m.answer("⚙️ Панель управления", reply_markup=main_kb())
+        await m.answer("⚙️ Панель", reply_markup=main_kb())
     else:
         await m.answer("👋 Бот активен")
 
@@ -147,7 +144,7 @@ async def add2(m: Message, state: FSMContext):
     try:
         cid = int(m.text)
     except:
-        return await m.answer("❌ Неверный ID")
+        return await m.answer("❌ Ошибка ID")
 
     await state.update_data(cid=cid)
     await state.set_state(AddChannel.name)
@@ -176,92 +173,85 @@ async def del_menu(c: CallbackQuery):
         for k, v in ch.items()
     ]
 
-    await c.message.answer("Выберите канал:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await c.message.answer("Выберите:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 @dp.callback_query(F.data.startswith("del_"))
 async def delete(c: CallbackQuery):
     cid = int(c.data.split("_")[1])
-
     cur.execute("DELETE FROM channels WHERE channel_id=?", (cid,))
     db.commit()
-
     await c.message.answer("🗑 Удалено")
 
 # ======================
-# LIST CHANNELS
+# LIST
 # ======================
 @dp.callback_query(F.data == "list")
 async def list_ch(c: CallbackQuery):
     ch = get_channels()
-
-    text = "📋 Каналы:\n\n" + "\n".join(
-        [f"{v['name']} ({k})" for k, v in ch.items()]
-    )
-
+    text = "📋 Каналы:\n\n" + "\n".join([f"{v['name']} ({k})" for k, v in ch.items()])
     await c.message.answer(text)
 
 # ======================
-# CREATE GIVEAWAY
+# GIVEAWAY CREATE
 # ======================
 @dp.callback_query(F.data == "create")
 async def create(c: CallbackQuery, state: FSMContext):
     await state.set_state(Giveaway.text)
-    await c.message.answer("🎁 Текст приза:")
+    await c.message.answer("🎁 Текст:")
 
 @dp.message(Giveaway.text)
 async def step1(m: Message, state: FSMContext):
     await state.update_data(text=m.text)
     await state.set_state(Giveaway.winners)
-    await m.answer("🏆 Кол-во победителей:")
+    await m.answer("🏆 Победители:")
 
 @dp.message(Giveaway.winners)
 async def step2(m: Message, state: FSMContext):
     try:
         w = int(m.text)
     except:
-        return await m.answer("❌ Введите число")
+        return await m.answer("❌ число")
 
     data = await state.get_data()
 
     giveaway.update({
-        "active": True,
         "text": data["text"],
         "winners": w,
-        "end": None,
-        "msgs": {}
+        "msgs": {},
+        "active": False,
+        "end": None
     })
 
     await state.clear()
-    await m.answer("⏱ Выберите время", reply_markup=time_kb())
+    await m.answer("⏱ Время", reply_markup=time_kb())
 
 # ======================
 # START TIME
 # ======================
 @dp.callback_query(F.data.startswith("t_"))
-async def time_start(c: CallbackQuery):
+async def start_time(c: CallbackQuery):
     minutes = int(c.data.split("_")[1])
 
     giveaway["end"] = datetime.now() + timedelta(minutes=minutes)
+    giveaway["active"] = True
 
     cur.execute("DELETE FROM users")
     db.commit()
 
     for cid in get_channels():
-        msg = await bot.send_photo(cid, LOGO, caption="🎁 РОЗЫГРЫШ", reply_markup=kb())
+        msg = await bot.send_photo(cid, LOGO, caption="🎁 GIVEAWAY", reply_markup=kb())
         giveaway["msgs"][cid] = msg
 
-    giveaway["active"] = True
-
-    await c.message.answer("🚀 Розыгрыш запущен")
+    await c.message.answer("🚀 Запущено")
 
 # ======================
-# CHECK SUB
+# JOIN
 # ======================
 async def check_sub(user_id):
     for cid in get_channels():
         try:
             m = await bot.get_chat_member(cid, user_id)
-            if m.status not in ("member", "administrator", "creator"):
+            if m.status not in ("member", "creator", "administrator"):
                 return False
         except:
             return False
@@ -274,63 +264,64 @@ async def join(c: CallbackQuery):
 
     cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (c.from_user.id,))
     db.commit()
-
     await c.answer("🎉 Участвуешь")
 
 # ======================
-# LIVE ENGINE (OPTIMIZED)
+# LIVE ENGINE (STABLE)
 # ======================
 async def live():
-    last_text = ""
+    last = None
 
     while True:
         await asyncio.sleep(1)
 
-        if not giveaway["active"] or not giveaway["end"]:
-            continue
+        try:
+            if not giveaway["active"] or not giveaway["end"]:
+                continue
 
-        remaining = int((giveaway["end"] - datetime.now()).total_seconds())
+            remaining = int((giveaway["end"] - datetime.now()).total_seconds())
 
-        if remaining <= 0:
-            users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+            if remaining <= 0:
+                users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
 
-            if users:
-                winners = random.sample(users, min(len(users), giveaway["winners"]))
+                if users:
+                    winners = random.sample(users, min(len(users), giveaway["winners"]))
+                    text = "🏆 ПОБЕДИТЕЛИ:\n\n" + "\n".join(
+                        [f"<a href='tg://user?id={u}'>Winner</a>" for u in winners]
+                    )
 
-                text = "🏆 ПОБЕДИТЕЛИ:\n\n" + "\n".join(
-                    [f"<a href='tg://user?id={u}'>Winner</a>" for u in winners]
-                )
+                    for cid in giveaway["msgs"]:
+                        await bot.send_message(cid, text)
 
-                for cid in giveaway["msgs"]:
-                    await bot.send_message(cid, text)
+                cur.execute("DELETE FROM users")
+                db.commit()
 
-            cur.execute("DELETE FROM users")
-            db.commit()
+                giveaway["active"] = False
+                giveaway["end"] = None
+                giveaway["msgs"] = {}
+                continue
 
-            giveaway["active"] = False
-            giveaway["end"] = None
-            giveaway["msgs"] = {}
+            count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
-            continue
+            text = f"🎁 {giveaway['text']}\n⏳ {format_time(remaining)}\n👥 {count}"
 
-        count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            if text == last:
+                continue
+            last = text
 
-        text = f"🎁 {giveaway['text']}\n⏳ {format_time(remaining)}\n👥 {count}"
+            for cid, msg in giveaway["msgs"].items():
+                try:
+                    await bot.edit_message_caption(
+                        chat_id=cid,
+                        message_id=msg.message_id,
+                        caption=text,
+                        reply_markup=kb()
+                    )
+                except:
+                    pass
 
-        if text == last_text:
-            continue
-        last_text = text
-
-        for cid, msg in giveaway["msgs"].items():
-            try:
-                await bot.edit_message_caption(
-                    chat_id=cid,
-                    message_id=msg.message_id,
-                    caption=text,
-                    reply_markup=kb()
-                )
-            except:
-                pass
+        except Exception as e:
+            print("LIVE ERROR:", e)
 
 # ======================
 # MAIN
