@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 # ======================
 # CONFIG
 # ======================
-TOKEN = os.getenv("8524199343:AAGjzOSOa0qMCw_gsfbdRAwin7I-18Z8eDE")
+TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("❌ Укажи BOT_TOKEN")
 
@@ -24,8 +24,8 @@ ADMIN_ID = 7468497968
 LOGO = "AgACAgIAAxkBAAIBEmnBGRn8bTmeyYndGFAFwf3HNjg5AAL1FGsbHMMISofDqjxORKtwAQADAgADdwADOgQ"
 
 CHANNELS = {
-    -1003856582918: {"name": "ItsNightmare1337"},
-    -1003794532196: {"name": "killer_586"},
+    -1003856582918: {"ItsNightmare1337": "ItsNightmare1337"},
+    -1003794532196: {"killer_586": "killer_586"},
 }
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
