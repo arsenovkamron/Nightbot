@@ -26,12 +26,17 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ======================
-# DB (только для каналов)
+# DB
 # ======================
 db = sqlite3.connect("db.sqlite", check_same_thread=False)
 cur = db.cursor()
 
-cur.execute("CREATE TABLE IF NOT EXISTS channels (channel_id INTEGER PRIMARY KEY, name TEXT)")
+cur.execute("""
+CREATE TABLE IF NOT EXISTS channels (
+    channel_id INTEGER PRIMARY KEY,
+    name TEXT
+)
+""")
 db.commit()
 
 # ======================
@@ -46,7 +51,7 @@ class AddChannel(StatesGroup):
     name = State()
 
 # ======================
-# STATE (главное состояние)
+# STATE
 # ======================
 giveaway = {
     "active": False,
@@ -56,11 +61,10 @@ giveaway = {
     "msgs": {}
 }
 
-# 👇 КЕШ пользователей (ОЧЕНЬ ВАЖНО)
 users = set()
 
 # ======================
-# CHANNELS
+# DB HELPERS
 # ======================
 def get_channels():
     return {
@@ -216,19 +220,17 @@ async def step2(m: Message, state: FSMContext):
     w = max(1, int(m.text))
     data = await state.get_data()
 
-    giveaway.update({
-        "text": data["text"],
-        "winners": w,
-        "msgs": {},
-        "active": False,
-        "end": None
-    })
+    giveaway["text"] = data["text"]
+    giveaway["winners"] = w
+    giveaway["msgs"] = {}
+    giveaway["active"] = False
+    giveaway["end"] = None
 
     await state.clear()
     await m.answer("⏱ Выберите время", reply_markup=time_kb())
 
 # ======================
-# START TIME
+# START GIVEAWAY
 # ======================
 @dp.callback_query(F.data.startswith("t_"))
 async def start_time(c: CallbackQuery):
@@ -242,13 +244,16 @@ async def start_time(c: CallbackQuery):
     users.clear()
 
     for cid in get_channels():
-        msg = await bot.send_photo(cid, LOGO, caption="🎁 РОЗЫГРЫШ", reply_markup=kb())
-        giveaway["msgs"][cid] = msg
+        try:
+            msg = await bot.send_photo(cid, LOGO, caption="🎁 РОЗЫГРЫШ", reply_markup=kb())
+            giveaway["msgs"][cid] = msg
+        except:
+            pass
 
     await c.message.answer("🚀 Розыгрыш запущен")
 
 # ======================
-# JOIN
+# CHECK SUB
 # ======================
 async def check_sub(user_id):
     for cid in get_channels():
@@ -271,10 +276,10 @@ async def join(c: CallbackQuery):
     await c.answer("🎉 Участвуешь")
 
 # ======================
-# FINISH GIVEAWAY
+# FINISH
 # ======================
 async def finish():
-    global giveaway, users
+    global users
 
     user_list = list(users)
 
@@ -292,18 +297,16 @@ async def finish():
         except:
             pass
 
-    giveaway = {
-        "active": False,
-        "end": None,
-        "text": "",
-        "winners": 0,
-        "msgs": {}
-    }
+    giveaway["active"] = False
+    giveaway["end"] = None
+    giveaway["text"] = ""
+    giveaway["winners"] = 0
+    giveaway["msgs"] = {}
 
     users.clear()
 
 # ======================
-# STABLE LOOP (НЕ ЛОМАЕТСЯ)
+# LIVE LOOP (FIXED)
 # ======================
 async def live():
     while True:
@@ -312,28 +315,24 @@ async def live():
         if not giveaway["active"] or not giveaway["end"]:
             continue
 
-        try:
-            remaining = int((giveaway["end"] - datetime.now()).total_seconds())
+        remaining = int((giveaway["end"] - datetime.now()).total_seconds())
 
-            if remaining <= 0:
-                await finish()
-                continue
+        if remaining <= 0:
+            await finish()
+            continue
 
-            text = f"🎁 {giveaway['text']}\n⏳ {format_time(remaining)}\n👥 {len(users)}"
+        text = f"🎁 {giveaway['text']}\n⏳ {format_time(remaining)}\n👥 {len(users)}"
 
-            for cid, msg in list(giveaway["msgs"].items()):
-                try:
-                    await bot.edit_message_caption(
-                        chat_id=cid,
-                        message_id=msg.message_id,
-                        caption=text,
-                        reply_markup=kb()
-                    )
-                except:
-                    pass
-
-        except Exception as e:
-            print("LIVE ERROR:", e)
+        for cid, msg in list(giveaway["msgs"].items()):
+            try:
+                await bot.edit_message_caption(
+                    chat_id=cid,
+                    message_id=msg.message_id,
+                    caption=text,
+                    reply_markup=kb()
+                )
+            except:
+                pass
 
 # ======================
 # MAIN
