@@ -13,9 +13,11 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
 # ======================
-TOKEN = os.getenv("BOT_TOKEN")
+# CONFIG
+# ======================
+TOKEN = os.getenv("8524199343:AAGjzOSOa0qMCw_gsfbdRAwin7I-18Z8eDE")
 if not TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан")
+    raise ValueError("❌ Укажи BOT_TOKEN")
 
 ADMIN_ID = 7468497968
 
@@ -30,7 +32,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ======================
-#DB
+# DB
 # ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
@@ -38,7 +40,7 @@ cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
 
 # ======================
-#STATE FSM
+# FSM
 # ======================
 class CreateGiveaway(StatesGroup):
     text = State()
@@ -46,7 +48,7 @@ class CreateGiveaway(StatesGroup):
     time = State()
 
 # ======================
-#GLOBAL STATE
+# STATE
 # ======================
 giveaway = {
     "active": False,
@@ -58,7 +60,7 @@ giveaway = {
 }
 
 # ======================
-#FORMAT TIME
+# TIME FORMAT
 # ======================
 def format_time(s):
     h = s // 3600
@@ -67,7 +69,7 @@ def format_time(s):
     return f"{h:02}ч {m:02}м {s:02}с"
 
 # ======================
-#KEYBOARDS
+# KEYBOARDS
 # ======================
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -96,7 +98,7 @@ def kb():
     return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
-#START MENU
+# START
 # ======================
 @dp.message(F.text == "/start")
 async def start(m: Message):
@@ -106,40 +108,36 @@ async def start(m: Message):
         await m.answer("👋 Бот работает")
 
 # ======================
-#CREATE BUTTON
+# FILE ID
+# ======================
+@dp.message(F.photo)
+async def file_id(m: Message):
+    await m.answer(f"<code>{m.photo[-1].file_id}</code>")
+
+# ======================
+# CREATE FLOW
 # ======================
 @dp.callback_query(F.data == "create")
 async def create(c: CallbackQuery, state: FSMContext):
     if c.from_user.id != ADMIN_ID:
         return
-
     await state.set_state(CreateGiveaway.text)
     await c.message.answer("✍️ Введи текст приза:", reply_markup=cancel_kb())
 
-# ======================
-#STEP 1
-# ======================
 @dp.message(CreateGiveaway.text)
 async def step1(m: Message, state: FSMContext):
     await state.update_data(text=m.text)
     await state.set_state(CreateGiveaway.winners)
     await m.answer("🏆 Сколько победителей?")
 
-# ======================
-#STEP 2
-# ======================
 @dp.message(CreateGiveaway.winners)
 async def step2(m: Message, state: FSMContext):
     if not m.text.isdigit():
         return await m.answer("❌ Введи число")
-
     await state.update_data(winners=int(m.text))
     await state.set_state(CreateGiveaway.time)
     await m.answer("⏱ Сколько минут?")
 
-# ======================
-#STEP 3 + START
-# ======================
 @dp.message(CreateGiveaway.time)
 async def step3(m: Message, state: FSMContext):
     if not m.text.isdigit():
@@ -163,7 +161,7 @@ async def step3(m: Message, state: FSMContext):
         msg = await bot.send_photo(
             cid,
             LOGO,
-            caption="🎁 РОЗЫГРЫШ ЗАПУЩЕН",
+            caption="🎁 <b>РОЗЫГРЫШ ЗАПУЩЕН</b>",
             reply_markup=kb()
         )
         giveaway["msgs"][cid] = msg
@@ -171,16 +169,13 @@ async def step3(m: Message, state: FSMContext):
     await state.clear()
     await m.answer("🚀 Розыгрыш запущен")
 
-# ======================
-#CANCEL
-# ======================
 @dp.callback_query(F.data == "cancel")
 async def cancel(c: CallbackQuery, state: FSMContext):
     await state.clear()
     await c.message.answer("❌ Отменено")
 
 # ======================
-#JOIN
+# JOIN / CHECK
 # ======================
 @dp.callback_query(F.data == "join")
 async def join(c: CallbackQuery):
@@ -188,59 +183,75 @@ async def join(c: CallbackQuery):
     db.commit()
     await c.answer("🎉 Ты участвуешь!")
 
+@dp.callback_query(F.data == "check")
+async def check(c: CallbackQuery):
+    await c.answer("✅ Проверено")
+
 # ======================
-#LIVE
+# LIVE ENGINE (УЛЬТРА СТАБИЛЬНЫЙ)
 # ======================
 async def live():
+    last_text = ""
+
     while True:
         await asyncio.sleep(1)
 
-        if not giveaway["active"]:
-            continue
+        try:
+            if not giveaway["active"] or giveaway["paused"]:
+                continue
 
-        remaining = int((giveaway["end"] - datetime.now()).total_seconds())
+            remaining = int((giveaway["end"] - datetime.now()).total_seconds())
 
-        if remaining <= 0:
-            giveaway["active"] = False
+            if remaining <= 0:
+                giveaway["active"] = False
 
-            users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+                users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
 
-            if users:
-                w = random.sample(users, min(len(users), giveaway["winners"]))
+                if users:
+                    winners = random.sample(users, min(len(users), giveaway["winners"]))
 
-                text = "🏆 ПОБЕДИТЕЛИ:\n\n" + "\n".join(
-                    [f"<a href='tg://user?id={u}'>Winner</a>" for u in w]
-                )
+                    text = "🏆 <b>ПОБЕДИТЕЛИ</b>\n\n" + "\n".join(
+                        [f"<a href='tg://user?id={u}'>Winner</a>" for u in winners]
+                    )
 
-                for cid in giveaway["msgs"]:
-                    await bot.send_message(cid, text)
+                    for cid in giveaway["msgs"]:
+                        await bot.send_message(cid, text)
 
-            cur.execute("DELETE FROM users")
-            db.commit()
-            continue
+                cur.execute("DELETE FROM users")
+                db.commit()
+                continue
 
-        count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            users_count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
-        caption = (
-            f"🎁 <b>{giveaway['text']}</b>\n\n"
-            f"⏳ {format_time(remaining)}\n"
-            f"👥 {count} участников\n"
-            f"🏆 {giveaway['winners']} победителей"
-        )
+            caption = (
+                f"🎁 <b>{giveaway['text']}</b>\n\n"
+                f"⏳ {format_time(remaining)}\n"
+                f"👥 {users_count} участников\n"
+                f"🏆 {giveaway['winners']} победителей"
+            )
 
-        for cid, msg in giveaway["msgs"].items():
-            try:
-                await bot.edit_message_caption(
-                    chat_id=cid,
-                    message_id=msg.message_id,
-                    caption=caption,
-                    reply_markup=kb()
-                )
-            except:
-                pass
+            if caption == last_text:
+                continue
+
+            last_text = caption
+
+            for cid, msg in giveaway["msgs"].items():
+                try:
+                    await bot.edit_message_caption(
+                        chat_id=cid,
+                        message_id=msg.message_id,
+                        caption=caption,
+                        reply_markup=kb()
+                    )
+                except Exception as e:
+                    if "message is not modified" in str(e):
+                        continue
+
+        except Exception as e:
+            print("LOOP ERROR:", e)
 
 # ======================
-#MAIN
+# MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
