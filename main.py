@@ -24,7 +24,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ======================
-DB
+#DB
 # ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
@@ -32,7 +32,7 @@ cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
 
 # ======================
-STATE ENGINE
+#STATE ENGINE
 # ======================
 giveaway = {
     "active": False,
@@ -44,14 +44,14 @@ giveaway = {
 }
 
 # ======================
-FILE ID HELPER
+#FILE ID HELPER
 # ======================
 @dp.message(F.photo)
 async def file_id(m: Message):
     await m.answer(f"<code>{m.photo[-1].file_id}</code>")
 
 # ======================
-TIME FORMAT
+#TIME FORMAT
 # ======================
 def format_time(s):
     h = s // 3600
@@ -60,7 +60,7 @@ def format_time(s):
     return f"{h:02}ч {m:02}м {s:02}с"
 
 # ======================
-KB
+#KB
 # ======================
 def kb():
     btn = []
@@ -74,7 +74,7 @@ def kb():
     return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
-CHECK SUB
+#CHECK SUB
 # ======================
 async def sub(user_id):
     try:
@@ -87,7 +87,7 @@ async def sub(user_id):
         return False
 
 # ======================
-JOIN
+#JOIN
 # ======================
 @dp.callback_query(F.data == "join")
 async def join(c):
@@ -99,7 +99,7 @@ async def join(c):
     await c.answer("🎉 Ты участвуешь!")
 
 # ======================
-CHECK
+#CHECK
 # ======================
 @dp.callback_query(F.data == "check")
 async def check(c):
@@ -111,7 +111,7 @@ async def check(c):
         await c.answer("❌ Нет подписки", show_alert=True)
 
 # ======================
-CONTROL COMMANDS
+#CONTROL COMMANDS
 # ======================
 @dp.message(F.text == "/pause")
 async def pause(m):
@@ -144,7 +144,7 @@ async def reroll(m):
             await bot.send_message(cid, text)
 
 # ======================
-START GIVEAWAY
+#START GIVEAWAY
 # ======================
 @dp.message(F.text.startswith("/giveaway"))
 async def start(m):
@@ -169,7 +169,7 @@ async def start(m):
     await m.answer("🚀 Запущено")
 
 # ======================
-LIVE ENGINE (PRO)
+#LIVE ENGINE (PRO)
 # ======================
 async def live():
     while True:
@@ -216,7 +216,7 @@ async def live():
                 pass
 
 # ======================
-STATS
+#STATS
 # ======================
 @dp.message(F.text == "/stats")
 async def stats(m):
@@ -226,7 +226,7 @@ async def stats(m):
     await m.answer(f"👥 {users}\n📢 {len(CHANNELS)}\n🎁 {giveaway['active']}")
 
 # ======================
-MAIN
+#MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
