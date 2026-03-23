@@ -9,15 +9,20 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-API_TOKEN = os.getenv("BOT_TOKEN")
-# 🔥 каналы (можешь менять названия)
+TOKEN = os.getenv("BOT_TOKEN")
+
+# 📸 LOGO (file_id вставишь сюда)
+LOGO = ""
+
+# 📢 КАНАЛЫ
 CHANNELS = {
--1003856582918:"🔥 ItsNightmare1337",
-   -1003794532196:"🤝 killer_586",
+    -1001234567890: "🔥 Основной канал",
+    -1009876543210: "🤝 Партнёр",
+    -1001111111111: "📢 Новости"
 }
 
 bot = Bot(
-    token=API_TOKEN,
+    token=TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 
@@ -31,48 +36,56 @@ CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY
 )
 """)
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS giveaway (
-    id INTEGER PRIMARY KEY,
-    text TEXT,
-    winners INTEGER,
-    end_time TEXT
-)
-""")
-
 db.commit()
 
-giveaway_messages = []
+
+# ======================
+# LINK BUILDER
+# ======================
+def get_link(channel_id: int):
+    return f"https://t.me/c/{str(channel_id)[4:]}"
 
 
 # ======================
-# КНОПКИ
+# KEYBOARD (ULTRA UI)
 # ======================
-def join_kb():
+def kb():
     buttons = []
 
-    for channel_id, name in CHANNELS.items():
-        link = f"https://t.me/{str(channel_id).replace('-100','')}"
+    for cid, name in CHANNELS.items():
         buttons.append([
-            InlineKeyboardButton(text=name, url=link)
+            InlineKeyboardButton(
+                text=f"📢 {name}",
+                url=get_link(cid)
+            )
         ])
 
     buttons.append([
         InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")
     ])
 
+    buttons.append([
+        InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check_sub")
+    ])
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="📤 Поделиться",
+            switch_inline_query="Я участвую в Nightbot Giveaway!"
+        )
+    ])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ======================
-# ПРОВЕРКА ПОДПИСКИ
+# CHECK SUB
 # ======================
 async def is_subscribed(user_id: int):
     try:
-        for channel_id in CHANNELS.keys():
-            member = await bot.get_chat_member(channel_id, user_id)
-            if member.status not in ("member", "administrator", "creator"):
+        for cid in CHANNELS.keys():
+            m = await bot.get_chat_member(cid, user_id)
+            if m.status not in ("member", "administrator", "creator"):
                 return False
         return True
     except:
@@ -80,162 +93,163 @@ async def is_subscribed(user_id: int):
 
 
 # ======================
-# ВРЕМЯ
-# ======================
-def format_time(seconds):
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    return f"{h:02}:{m:02}:{s:02}"
-
-
-# ======================
-# /start
-# ======================
-@dp.message(F.text == "/start")
-async def start(message: Message):
-    await message.answer("Привет 👋")
-
-
-# ======================
-# GIVEAWAY
-# ======================
-@dp.message(F.text.startswith("/giveaway"))
-async def giveaway(message: Message):
-    try:
-        args = message.text.split("|")
-
-        text = args[1].strip()
-        winners = int(args[2])
-        minutes = int(args[3])
-
-        end_time = datetime.now() + timedelta(minutes=minutes)
-
-        cur.execute("DELETE FROM giveaway")
-        cur.execute("DELETE FROM users")
-
-        cur.execute(
-            "INSERT INTO giveaway (text, winners, end_time) VALUES (?, ?, ?)",
-            (text, winners, end_time.isoformat())
-        )
-        db.commit()
-
-        global giveaway_messages
-        giveaway_messages = []
-
-        for channel in CHANNELS.keys():
-            msg = await bot.send_message(
-                chat_id=channel,
-                text=f"""
-🌙 <b>GIVEAWAY</b>
-
-{text}
-
-⏱ Осталось: ⏳
-🏆 Победителей: {winners}
-""",
-                reply_markup=join_kb()
-            )
-
-            giveaway_messages.append((channel, msg.message_id))
-
-        await message.answer("✅ Розыгрыш запущен")
-
-    except Exception as e:
-        await message.answer("Ошибка ❌")
-        print(e)
-
-
-# ======================
-# JOIN
+# JOIN (ANTI CHEAT)
 # ======================
 @dp.callback_query(F.data == "join")
 async def join(call: CallbackQuery):
     if not await is_subscribed(call.from_user.id):
-        await call.answer("Подпишись на все каналы ❌", show_alert=True)
+        await call.answer("❌ Сначала подпишись на каналы!", show_alert=True)
         return
 
     cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
     db.commit()
 
-    await call.answer("Ты участвуешь 🎉", show_alert=True)
+    await call.answer("🎉 Ты участвуешь!", show_alert=True)
 
 
 # ======================
-# LOOP
+# CHECK BUTTON (ULTRA 3)
 # ======================
-async def loop():
-    while True:
-        await asyncio.sleep(5)
-
-        row = cur.execute("SELECT text, winners, end_time FROM giveaway").fetchone()
-
-        if not row:
-            continue
-
-        text, winners, end_time = row
-        end_time = datetime.fromisoformat(end_time)
-
-        remaining = int((end_time - datetime.now()).total_seconds())
-
-        # 🔥 анти-отписка
-        users_db = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
-        valid_users = []
-
-        for user_id in users_db:
-            if await is_subscribed(user_id):
-                valid_users.append(user_id)
-            else:
-                cur.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-
+@dp.callback_query(F.data == "check_sub")
+async def check(call: CallbackQuery):
+    if await is_subscribed(call.from_user.id):
+        cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
         db.commit()
 
-        count = len(valid_users)
+        await call.answer("✅ Подписка подтверждена!", show_alert=True)
+    else:
+        await call.answer("❌ Подпишись на все каналы!", show_alert=True)
 
-        # обновление сообщений
-        for channel, msg_id in giveaway_messages:
-            try:
-                await bot.edit_message_text(
-                    chat_id=channel,
-                    message_id=msg_id,
-                    text=f"""
-🌙 <b>GIVEAWAY</b>
 
-{text}
+# ======================
+# GIVEAWAY STATE
+# ======================
+giveaway = {
+    "msg": None,
+    "end": None,
+    "text": "",
+    "winners": 0,
+    "active": False
+}
 
-⏱ Осталось: {format_time(max(0, remaining))}
-👥 Участников: {count}
-🏆 Победителей: {winners}
-""",
-                    reply_markup=join_kb()
-                )
-            except:
-                pass
 
-        # завершение
+# ======================
+# FORMAT TIME
+# ======================
+def format_time(s: int):
+    h = s // 3600
+    m = (s % 3600) // 60
+    s = s % 60
+    return f"{h:02}:{m:02}:{s:02}"
+
+
+# ======================
+# LIVE ENGINE
+# ======================
+async def live():
+    while True:
+        await asyncio.sleep(1)
+
+        if not giveaway["active"]:
+            continue
+
+        remaining = int((giveaway["end"] - datetime.now()).total_seconds())
+        if remaining < 0:
+            remaining = 0
+
+        users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+        caption = f"""
+🌙 <b>NIGHTBOT GIVEAWAY</b>
+━━━━━━━━━━━━━━
+🎁 <b>{giveaway['text']}</b>
+
+⏱ Осталось: {format_time(remaining)}
+👥 Участников: {users}
+🏆 Победителей: {giveaway['winners']}
+
+━━━━━━━━━━━━━━
+🤖 Nightbot System
+"""
+
+        try:
+            await bot.edit_message_caption(
+                chat_id=giveaway["msg"].chat.id,
+                message_id=giveaway["msg"].message_id,
+                caption=caption,
+                reply_markup=kb()
+            )
+        except:
+            pass
+
+        # FINISH
         if remaining <= 0:
-            if valid_users:
-                winners_list = random.sample(valid_users, min(len(valid_users), winners))
+            giveaway["active"] = False
 
-                result = "🏆 <b>ПОБЕДИТЕЛИ</b>\n\n" + "\n".join(
-                    [f"<a href='tg://user?id={u}'>Пользователь</a>" for u in winners_list]
+            users_list = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+
+            if users_list:
+                winners = random.sample(users_list, min(len(users_list), giveaway["winners"]))
+
+                text = "🏆 <b>NIGHTBOT WINNERS</b>\n\n" + "\n".join(
+                    [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
                 )
 
-                for channel in CHANNELS.keys():
-                    await bot.send_message(channel, result)
+                await bot.send_message(giveaway["msg"].chat.id, text)
 
-            cur.execute("DELETE FROM giveaway")
             cur.execute("DELETE FROM users")
             db.commit()
 
 
 # ======================
-# MAIN
+# GIVEAWAY START
+# ======================
+@dp.message(F.text.startswith("/giveaway"))
+async def giveaway_cmd(message: Message):
+    try:
+        _, text, winners, minutes = message.text.split("|")
+
+        winners = int(winners)
+        minutes = int(minutes)
+
+        end_time = datetime.now() + timedelta(minutes=minutes)
+
+        cur.execute("DELETE FROM users")
+        db.commit()
+
+        msg = await message.answer_photo(
+            photo=LOGO,
+            caption="🌙 <b>NIGHTBOT</b>\n⏳ Загрузка...",
+            reply_markup=kb()
+        )
+
+        giveaway.update({
+            "msg": msg,
+            "end": end_time,
+            "text": text,
+            "winners": winners,
+            "active": True
+        })
+
+        await message.answer("🚀 Giveaway запущен")
+
+    except Exception as e:
+        await message.answer("❌ Ошибка")
+        print(e)
+
+
+# ======================
+# START BOT
 # ======================
 async def main():
-    asyncio.create_task(loop())
+    asyncio.create_task(live())
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+@dp.message(F.photo)
+async def get_file_id(message: Message):
+    file_id = message.photo[-1].file_id
+    await message.answer(f"📸 FILE_ID:\n\n<code>{file_id}</code>")
