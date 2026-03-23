@@ -24,7 +24,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ======================
-DB
+#DB
 # ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
@@ -32,7 +32,7 @@ cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
 
 # ======================
-STATE
+#STATE
 # ======================
 giveaway = {
     "active": False,
@@ -44,14 +44,14 @@ giveaway = {
 }
 
 # ======================
-FILE ID
+#FILE ID
 # ======================
 @dp.message(F.photo)
 async def file_id(m: Message):
     await m.answer(f"<code>{m.photo[-1].file_id}</code>")
 
 # ======================
-FORMAT TIME
+#FORMAT TIME
 # ======================
 def format_time(s: int):
     h = s // 3600
@@ -60,7 +60,7 @@ def format_time(s: int):
     return f"{h:02}ч {m:02}м {s:02}с"
 
 # ======================
-KEYBOARD (FIXED v3)
+#KEYBOARD (FIXED v3)
 # ======================
 def kb():
     btn = []
@@ -91,7 +91,7 @@ def kb():
     return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
-CHECK SUB
+#CHECK SUB
 # ======================
 async def sub(user_id: int):
     try:
@@ -104,7 +104,7 @@ async def sub(user_id: int):
         return False
 
 # ======================
-JOIN
+#JOIN
 # ======================
 @dp.callback_query(F.data == "join")
 async def join(c: CallbackQuery):
@@ -116,7 +116,7 @@ async def join(c: CallbackQuery):
     await c.answer("🎉 Ты участвуешь!")
 
 # ======================
-CHECK
+#CHECK
 # ======================
 @dp.callback_query(F.data == "check")
 async def check(c: CallbackQuery):
@@ -128,7 +128,7 @@ async def check(c: CallbackQuery):
         await c.answer("❌ Нет подписки", show_alert=True)
 
 # ======================
-COMMANDS
+#COMMANDS
 # ======================
 @dp.message(F.text == "/pause")
 async def pause(m: Message):
@@ -165,7 +165,7 @@ async def reroll(m: Message):
             await bot.send_message(cid, text)
 
 # ======================
-GIVEAWAY START (SAFE)
+#GIVEAWAY START (SAFE)
 # ======================
 @dp.message(F.text.startswith("/giveaway"))
 async def start(m: Message):
@@ -199,7 +199,7 @@ async def start(m: Message):
         await m.answer("❌ Формат: /giveaway|текст|победители|минуты")
 
 # ======================
-LIVE ENGINE (FIXED)
+#LIVE ENGINE (FIXED)
 # ======================
 async def live():
     while True:
@@ -251,7 +251,7 @@ async def live():
                 pass
 
 # ======================
-STATS
+#STATS
 # ======================
 @dp.message(F.text == "/stats")
 async def stats(m: Message):
@@ -267,7 +267,7 @@ async def stats(m: Message):
     )
 
 # ======================
-MAIN
+#MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
