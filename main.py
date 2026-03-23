@@ -12,7 +12,7 @@ from aiogram.enums import ParseMode
 # ======================
 # CONFIG
 # ======================
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("8524199343:AAGjzOSOa0qMCw_gsfbdRAwin7I-18Z8eDE")
 
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN не задан в environment variables")
