@@ -14,14 +14,18 @@ from aiogram.enums import ParseMode
 # ======================
 TOKEN = os.getenv("BOT_TOKEN")
 
-# 📸 LOGO (сюда вставишь file_id)
-LOGO = ""
+# ======================
+# ADMIN
+# ======================
+ADMIN_ID = 7468497968  # <-- поменяй на свой ID
 
-# 📢 CHANNELS ULTRA
+# 📸 LOGO FILE_ID
+LOGO = "AgACAgIAAxkBAAIBEmnBGRn8bTmeyYndGFAFwf3HNjg5AAL1FGsbHMMISofDqjxORKtwAQADAgADdwADOgQ"
+
+# 📢 CHANNELS
 CHANNELS = {
-    -1001234567890: "🔥 Основной канал",
-    -1009876543210: "🤝 Партнёр",
-    -1001111111111: "📢 Новости"
+    -1003856582918: "ItsNightmare1337",
+    -1003794532196: "killer_586",
 }
 
 # ======================
@@ -47,31 +51,49 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 db.commit()
 
-
 # ======================
-# FILE ID GETTER (ВАЖНО)
+# FILE ID GETTER
 # ======================
 @dp.message(F.photo)
 async def get_file_id(message: Message):
     file_id = message.photo[-1].file_id
     await message.answer(f"📸 FILE_ID:\n\n<code>{file_id}</code>")
 
-
 # ======================
-# HELP TEST
+# TEST COMMAND
 # ======================
-@dp.message()
+@dp.message(F.text == "/test")
 async def test(message: Message):
-    if message.text == "/test":
-        await message.answer("✅ Nightbot работает")
+    await message.answer("✅ Nightbot работает")
 
+# ======================
+# STATS (ADMIN)
+# ======================
+@dp.message(F.text == "/stats")
+async def stats(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+    await message.answer(
+        f"""
+🌙 <b>NIGHTBOT STATS</b>
+
+👥 Участников: {users}
+📢 Каналов: {len(CHANNELS)}
+🎁 Giveaway: {'активен' if giveaway['active'] else 'нет'}
+
+━━━━━━━━━━━━━━
+🤖 Nightbot Admin Panel
+"""
+    )
 
 # ======================
 # LINK BUILDER
 # ======================
 def get_link(cid: int):
     return f"https://t.me/c/{str(cid)[4:]}"
-
 
 # ======================
 # KEYBOARD
@@ -101,7 +123,6 @@ def kb():
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-
 # ======================
 # CHECK SUB
 # ======================
@@ -114,7 +135,6 @@ async def is_subscribed(user_id: int):
         return True
     except:
         return False
-
 
 # ======================
 # JOIN
@@ -130,7 +150,6 @@ async def join(call: CallbackQuery):
 
     await call.answer("🎉 Ты участвуешь!", show_alert=True)
 
-
 # ======================
 # CHECK BUTTON
 # ======================
@@ -143,7 +162,6 @@ async def check(call: CallbackQuery):
     else:
         await call.answer("❌ Подпишись на каналы!", show_alert=True)
 
-
 # ======================
 # GIVEAWAY STATE
 # ======================
@@ -155,7 +173,6 @@ giveaway = {
     "active": False
 }
 
-
 # ======================
 # FORMAT TIME
 # ======================
@@ -165,9 +182,8 @@ def format_time(s: int):
     s = s % 60
     return f"{h:02}:{m:02}:{s:02}"
 
-
 # ======================
-# LIVE ENGINE
+# LIVE LOOP (1 sec update)
 # ======================
 async def live():
     while True:
@@ -214,15 +230,14 @@ async def live():
             if users_list:
                 winners = random.sample(users_list, min(len(users_list), giveaway["winners"]))
 
-                result = "🏆 <b>NIGHTBOT WINNERS</b>\n\n" + "\n".join(
+                text = "🏆 <b>NIGHTBOT WINNERS</b>\n\n" + "\n".join(
                     [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
                 )
 
-                await bot.send_message(giveaway["msg"].chat.id, result)
+                await bot.send_message(giveaway["msg"].chat.id, text)
 
             cur.execute("DELETE FROM users")
             db.commit()
-
 
 # ======================
 # GIVEAWAY START
@@ -257,17 +272,15 @@ async def giveaway_cmd(message: Message):
         await message.answer("🚀 Giveaway запущен")
 
     except Exception as e:
-        await message.answer("❌ Ошибка формата:\n/giveaway|текст|победители|минуты")
+        await message.answer("❌ Формат:\n/giveaway|текст|победители|минуты")
         print(e)
 
-
 # ======================
-# MAIN
+# START BOT
 # ======================
 async def main():
     asyncio.create_task(live())
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
