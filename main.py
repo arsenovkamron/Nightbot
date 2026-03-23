@@ -24,6 +24,9 @@ CHANNELS = {
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
+# ======================
+# DB
+# ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
 
@@ -31,80 +34,38 @@ cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
 
 # ======================
-# GIVEAWAY STATE
+# STATE
 # ======================
 giveaway = {
     "msgs": {},
     "end": None,
     "text": "",
     "winners": 0,
-    "active": False,
-    "last_winners": []
+    "active": False
 }
 
 # ======================
-# FILE ID
+# FILE ID GETTER
 # ======================
 @dp.message(F.photo)
 async def file_id(message: Message):
-    await message.answer(f"<code>{message.photo[-1].file_id}</code>")
+    await message.answer(message.photo[-1].file_id)
 
 # ======================
-# UTIL
+# TEST
 # ======================
-def get_link(cid):
-    return f"https://t.me/c/{str(cid)[4:]}"
-
-def kb():
-    buttons = []
-
-    for cid, name in CHANNELS.items():
-        buttons.append([InlineKeyboardButton(text=name, url=get_link(cid))])
-
-    buttons.append([InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")])
-    buttons.append([InlineKeyboardButton(text="🔄 Проверить", callback_data="check")])
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-async def is_sub(user_id):
-    for cid in CHANNELS:
-        m = await bot.get_chat_member(cid, user_id)
-        if m.status not in ("member", "creator", "administrator"):
-            return False
-    return True
+@dp.message(F.text == "/test")
+async def test(m):
+    await m.answer("✅ Bot alive")
 
 # ======================
-# JOIN
-# ======================
-@dp.callback_query(F.data == "join")
-async def join(call):
-    if not await is_sub(call.from_user.id):
-        return await call.answer("❌ Нет подписки", show_alert=True)
-
-    cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
-    db.commit()
-
-    await call.answer("🎉 Участвуешь!")
-
-# ======================
-# CHECK
-# ======================
-@dp.callback_query(F.data == "check")
-async def check(call):
-    if await is_sub(call.from_user.id):
-        cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
-        db.commit()
-        await call.answer("✅ ОК")
-    else:
-        await call.answer("❌ Подпишись", show_alert=True)
-
-# ======================
-# STATS (3)
+# STATS
 # ======================
 @dp.message(F.text == "/stats")
 async def stats(m):
     if m.from_user.id != ADMIN_ID:
         return
+
     users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
     await m.answer(
@@ -112,66 +73,62 @@ async def stats(m):
     )
 
 # ======================
-# ADD CHANNEL (1)
+# LINK
 # ======================
-@dp.message(F.text.startswith("/addchannel"))
-async def add_channel(m):
-    if m.from_user.id != ADMIN_ID:
-        return
+def link(cid):
+    return f"https://t.me/c/{str(cid)[4:]}"
 
+# ======================
+# KEYBOARD
+# ======================
+def kb():
+    buttons = []
+
+    for cid, name in CHANNELS.items():
+        buttons.append([InlineKeyboardButton(text=name, url=link(cid))])
+
+    buttons.append([InlineKeyboardButton(text="🎉 Join", callback_data="join")])
+    buttons.append([InlineKeyboardButton(text="🔄 Check", callback_data="check")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# ======================
+# CHECK SUB
+# ======================
+async def check_sub(user_id):
     try:
-        _, cid, name = m.text.split("|")
-        CHANNELS[int(cid)] = name
-        await m.answer("✅ Added")
+        for cid in CHANNELS:
+            m = await bot.get_chat_member(cid, user_id)
+            if m.status not in ("member", "creator", "administrator"):
+                return False
+        return True
     except:
-        await m.answer("❌ /addchannel|id|name")
+        return False
 
 # ======================
-# REMOVE CHANNEL (2)
+# JOIN
 # ======================
-@dp.message(F.text.startswith("/removechannel"))
-async def remove_channel(m):
-    if m.from_user.id != ADMIN_ID:
-        return
+@dp.callback_query(F.data == "join")
+async def join(c):
+    if not await check_sub(c.from_user.id):
+        return await c.answer("❌ No subscription", show_alert=True)
 
-    try:
-        _, cid = m.text.split("|")
-        CHANNELS.pop(int(cid), None)
-        await m.answer("🗑 Removed")
-    except:
-        await m.answer("❌ /removechannel|id")
+    cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (c.from_user.id,))
+    db.commit()
+
+    await c.answer("🎉 Joined")
 
 # ======================
-# END GIVEAWAY (4)
+# CHECK
 # ======================
-@dp.message(F.text == "/end")
-async def end(m):
-    if m.from_user.id != ADMIN_ID:
-        return
-
-    giveaway["active"] = False
-    await m.answer("⛔ Giveaway stopped")
-
-# ======================
-# REROLL (5)
-# ======================
-@dp.message(F.text == "/reroll")
-async def reroll(m):
-    if m.from_user.id != ADMIN_ID:
-        return
-
-    users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
-    if not users:
-        return await m.answer("❌ No users")
-
-    winners = random.sample(users, min(3, len(users)))
-    giveaway["last_winners"] = winners
-
-    text = "🎲 REROLL WINNERS:\n\n" + "\n".join(
-        [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
-    )
-
-    await m.answer(text)
+@dp.callback_query(F.data == "check")
+async def check(c):
+    if await check_sub(c.from_user.id):
+        cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (c.from_user.id,))
+        db.commit()
+        await c.answer("✅ OK")
+    else:
+        await c.answer("❌ Subscribe first", show_alert=True)
 
 # ======================
 # GIVEAWAY START
@@ -193,22 +150,25 @@ async def giveaway_cmd(m):
         cur.execute("DELETE FROM users")
         db.commit()
 
+        caption = f"🎁 {text}\n⏳ Starting..."
+
+        # SEND TO ALL CHANNELS
         for cid in CHANNELS:
             msg = await bot.send_photo(
                 cid,
                 LOGO,
-                caption=f"🎁 {text}\n⏳ Loading...",
+                caption=caption,
                 reply_markup=kb()
             )
             giveaway["msgs"][cid] = msg
 
-        await m.answer("🚀 Started")
+        await m.answer("🚀 Giveaway started")
 
     except:
         await m.answer("❌ /giveaway|text|winners|minutes")
 
 # ======================
-# LIVE LOOP
+# LIVE ENGINE (FIXED)
 # ======================
 async def live():
     while True:
@@ -218,6 +178,7 @@ async def live():
             continue
 
         remaining = int((giveaway["end"] - datetime.now()).total_seconds())
+
         if remaining <= 0:
             giveaway["active"] = False
 
@@ -236,6 +197,27 @@ async def live():
             cur.execute("DELETE FROM users")
             db.commit()
             continue
+
+        users_count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+        caption = f"""
+🎁 <b>{giveaway['text']}</b>
+
+⏱ Time: {remaining}s
+👥 Users: {users_count}
+🏆 Winners: {giveaway['winners']}
+"""
+
+        for cid, msg in giveaway["msgs"].items():
+            try:
+                await bot.edit_message_caption(
+                    chat_id=cid,
+                    message_id=msg.message_id,
+                    caption=caption,
+                    reply_markup=kb()
+                )
+            except:
+                pass
 
 # ======================
 # MAIN
