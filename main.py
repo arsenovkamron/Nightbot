@@ -24,7 +24,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ======================
-#DB
+DB
 # ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
@@ -32,7 +32,7 @@ cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
 
 # ======================
-#STATE ENGINE
+STATE
 # ======================
 giveaway = {
     "active": False,
@@ -40,43 +40,60 @@ giveaway = {
     "end": None,
     "text": "",
     "winners": 0,
-    "msgs": {},
+    "msgs": {}
 }
 
 # ======================
-#FILE ID HELPER
+FILE ID
 # ======================
 @dp.message(F.photo)
 async def file_id(m: Message):
     await m.answer(f"<code>{m.photo[-1].file_id}</code>")
 
 # ======================
-#TIME FORMAT
+FORMAT TIME
 # ======================
-def format_time(s):
+def format_time(s: int):
     h = s // 3600
     m = (s % 3600) // 60
     s = s % 60
     return f"{h:02}ч {m:02}м {s:02}с"
 
 # ======================
-#KB
+KEYBOARD (FIXED v3)
 # ======================
 def kb():
     btn = []
-    for cid, name in CHANNELS.items():
-        btn.append([InlineKeyboardButton(text=f"📢 {name}", url=f"https://t.me/c/{str(cid)[4:]}")])
 
-    btn.append([InlineKeyboardButton("🎉 Участвовать", callback_data="join")])
-    btn.append([InlineKeyboardButton("🔄 Проверить", callback_data="check")])
-    btn.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query="Я участвую в розыгрыше!")])
+    for cid, name in CHANNELS.items():
+        btn.append([
+            InlineKeyboardButton(
+                text=f"📢 {name}",
+                url=f"https://t.me/c/{str(cid)[4:]}"
+            )
+        ])
+
+    btn.append([
+        InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")
+    ])
+
+    btn.append([
+        InlineKeyboardButton(text="🔄 Проверить", callback_data="check")
+    ])
+
+    btn.append([
+        InlineKeyboardButton(
+            text="📤 Поделиться",
+            switch_inline_query="Я участвую в розыгрыше!"
+        )
+    ])
 
     return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
-#CHECK SUB
+CHECK SUB
 # ======================
-async def sub(user_id):
+async def sub(user_id: int):
     try:
         for cid in CHANNELS:
             m = await bot.get_chat_member(cid, user_id)
@@ -87,10 +104,10 @@ async def sub(user_id):
         return False
 
 # ======================
-#JOIN
+JOIN
 # ======================
 @dp.callback_query(F.data == "join")
-async def join(c):
+async def join(c: CallbackQuery):
     if not await sub(c.from_user.id):
         return await c.answer("❌ Подпишись", show_alert=True)
 
@@ -99,10 +116,10 @@ async def join(c):
     await c.answer("🎉 Ты участвуешь!")
 
 # ======================
-#CHECK
+CHECK
 # ======================
 @dp.callback_query(F.data == "check")
-async def check(c):
+async def check(c: CallbackQuery):
     if await sub(c.from_user.id):
         cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (c.from_user.id,))
         db.commit()
@@ -111,65 +128,78 @@ async def check(c):
         await c.answer("❌ Нет подписки", show_alert=True)
 
 # ======================
-#CONTROL COMMANDS
+COMMANDS
 # ======================
 @dp.message(F.text == "/pause")
-async def pause(m):
+async def pause(m: Message):
     if m.from_user.id == ADMIN_ID:
         giveaway["paused"] = True
         await m.answer("⏸ Пауза")
 
 @dp.message(F.text == "/resume")
-async def resume(m):
+async def resume(m: Message):
     if m.from_user.id == ADMIN_ID:
         giveaway["paused"] = False
         await m.answer("▶️ Продолжено")
 
 @dp.message(F.text == "/end")
-async def end(m):
+async def end(m: Message):
     if m.from_user.id == ADMIN_ID:
         giveaway["active"] = False
         await m.answer("⛔ Завершено")
 
 @dp.message(F.text == "/reroll")
-async def reroll(m):
+async def reroll(m: Message):
     if m.from_user.id != ADMIN_ID:
         return
 
     users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
-    if users:
+
+    if users and giveaway["winners"] > 0:
         w = random.sample(users, min(len(users), giveaway["winners"]))
-        text = "🏆 NEW WINNERS:\n\n" + "\n".join([f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in w])
+        text = "🏆 НОВЫЕ ПОБЕДИТЕЛИ:\n\n" + "\n".join(
+            [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in w]
+        )
+
         for cid in giveaway["msgs"]:
             await bot.send_message(cid, text)
 
 # ======================
-#START GIVEAWAY
+GIVEAWAY START (SAFE)
 # ======================
 @dp.message(F.text.startswith("/giveaway"))
-async def start(m):
-    _, text, winners, minutes = m.text.split("|")
+async def start(m: Message):
+    try:
+        _, text, winners, minutes = m.text.split("|")
 
-    giveaway.update({
-        "active": True,
-        "paused": False,
-        "text": text,
-        "winners": int(winners),
-        "end": datetime.now() + timedelta(minutes=int(minutes)),
-        "msgs": {}
-    })
+        giveaway.update({
+            "active": True,
+            "paused": False,
+            "text": text,
+            "winners": int(winners),
+            "end": datetime.now() + timedelta(minutes=int(minutes)),
+            "msgs": {}
+        })
 
-    cur.execute("DELETE FROM users")
-    db.commit()
+        cur.execute("DELETE FROM users")
+        db.commit()
 
-    for cid in CHANNELS:
-        msg = await bot.send_photo(cid, LOGO, caption="🎁 РОЗЫГРЫШ ЗАПУЩЕН", reply_markup=kb())
-        giveaway["msgs"][cid] = msg
+        for cid in CHANNELS:
+            msg = await bot.send_photo(
+                cid,
+                LOGO,
+                caption="🎁 РОЗЫГРЫШ ЗАПУЩЕН",
+                reply_markup=kb()
+            )
+            giveaway["msgs"][cid] = msg
 
-    await m.answer("🚀 Запущено")
+        await m.answer("🚀 Запущено")
+
+    except:
+        await m.answer("❌ Формат: /giveaway|текст|победители|минуты")
 
 # ======================
-#LIVE ENGINE (PRO)
+LIVE ENGINE (FIXED)
 # ======================
 async def live():
     while True:
@@ -185,11 +215,11 @@ async def live():
 
             users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
 
-            if users:
-                winners = random.sample(users, min(len(users), giveaway["winners"]))
+            if users and giveaway["winners"] > 0:
+                w = random.sample(users, min(len(users), giveaway["winners"]))
 
                 text = "🏆 ПОБЕДИТЕЛИ:\n\n" + "\n".join(
-                    [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
+                    [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in w]
                 )
 
                 for cid in giveaway["msgs"]:
@@ -205,28 +235,39 @@ async def live():
             f"🎁 <b>{giveaway['text']}</b>\n\n"
             f"⏳ Таймер: {format_time(remaining)}\n"
             f"👥 Участники: {users_count}\n"
-            f"🏆 Победители: {giveaway['winners']}\n"
+            f"🏆 Победителей: {giveaway['winners']}\n"
             f"{'⏸ ПАУЗА' if giveaway['paused'] else '🔥 ИДЁТ'}"
         )
 
         for cid, msg in giveaway["msgs"].items():
             try:
-                await bot.edit_message_caption(cid, msg.message_id, caption, reply_markup=kb())
+                await bot.edit_message_caption(
+                    chat_id=cid,
+                    message_id=msg.message_id,
+                    caption=caption,
+                    reply_markup=kb()
+                )
             except:
                 pass
 
 # ======================
-#STATS
+STATS
 # ======================
 @dp.message(F.text == "/stats")
-async def stats(m):
+async def stats(m: Message):
     if m.from_user.id != ADMIN_ID:
         return
+
     users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    await m.answer(f"👥 {users}\n📢 {len(CHANNELS)}\n🎁 {giveaway['active']}")
+
+    await m.answer(
+        f"👥 Пользователи: {users}\n"
+        f"📢 Каналы: {len(CHANNELS)}\n"
+        f"🎁 Активен: {giveaway['active']}"
+    )
 
 # ======================
-#MAIN
+MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
