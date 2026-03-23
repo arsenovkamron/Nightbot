@@ -10,180 +10,205 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 # ======================
-# TOKEN
-# ======================
 TOKEN = os.getenv("BOT_TOKEN")
 
-# ======================
-# ADMIN
-# ======================
-ADMIN_ID = 7468497968  # <-- поменяй на свой ID
+ADMIN_ID = 7468497968
 
-# 📸 LOGO FILE_ID
 LOGO = "AgACAgIAAxkBAAIBEmnBGRn8bTmeyYndGFAFwf3HNjg5AAL1FGsbHMMISofDqjxORKtwAQADAgADdwADOgQ"
 
-# 📢 CHANNELS
 CHANNELS = {
     -1003856582918: "ItsNightmare1337",
     -1003794532196: "killer_586",
 }
 
-# ======================
-# BOT INIT
-# ======================
-bot = Bot(
-    token=TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
-
+bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# ======================
-# DB
-# ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
 
-cur.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY
-)
-""")
+cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
-
-# ======================
-# FILE ID GETTER
-# ======================
-@dp.message(F.photo)
-async def get_file_id(message: Message):
-    file_id = message.photo[-1].file_id
-    await message.answer(f"📸 FILE_ID:\n\n<code>{file_id}</code>")
-
-# ======================
-# TEST COMMAND
-# ======================
-@dp.message(F.text == "/test")
-async def test(message: Message):
-    await message.answer("✅ Nightbot работает")
-
-# ======================
-# STATS (ADMIN)
-# ======================
-@dp.message(F.text == "/stats")
-async def stats(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-
-    await message.answer(
-        f"""
-🌙 <b>NIGHTBOT STATS</b>
-
-👥 Участников: {users}
-📢 Каналов: {len(CHANNELS)}
-🎁 Giveaway: {'активен' if giveaway['active'] else 'нет'}
-
-━━━━━━━━━━━━━━
-🤖 Nightbot Admin Panel
-"""
-    )
-
-# ======================
-# LINK BUILDER
-# ======================
-def get_link(cid: int):
-    return f"https://t.me/c/{str(cid)[4:]}"
-
-# ======================
-# KEYBOARD
-# ======================
-def kb():
-    buttons = []
-
-    for cid, name in CHANNELS.items():
-        buttons.append([
-            InlineKeyboardButton(text=f"📢 {name}", url=get_link(cid))
-        ])
-
-    buttons.append([
-        InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")
-    ])
-
-    buttons.append([
-        InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check")
-    ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            text="📤 Поделиться",
-            switch_inline_query="Я участвую в Nightbot Giveaway!"
-        )
-    ])
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-# ======================
-# CHECK SUB
-# ======================
-async def is_subscribed(user_id: int):
-    try:
-        for cid in CHANNELS.keys():
-            m = await bot.get_chat_member(cid, user_id)
-            if m.status not in ("member", "administrator", "creator"):
-                return False
-        return True
-    except:
-        return False
-
-# ======================
-# JOIN
-# ======================
-@dp.callback_query(F.data == "join")
-async def join(call: CallbackQuery):
-    if not await is_subscribed(call.from_user.id):
-        await call.answer("❌ Подпишись на все каналы!", show_alert=True)
-        return
-
-    cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
-    db.commit()
-
-    await call.answer("🎉 Ты участвуешь!", show_alert=True)
-
-# ======================
-# CHECK BUTTON
-# ======================
-@dp.callback_query(F.data == "check")
-async def check(call: CallbackQuery):
-    if await is_subscribed(call.from_user.id):
-        cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
-        db.commit()
-        await call.answer("✅ Подписка подтверждена!", show_alert=True)
-    else:
-        await call.answer("❌ Подпишись на каналы!", show_alert=True)
 
 # ======================
 # GIVEAWAY STATE
 # ======================
 giveaway = {
-    "msg": None,
+    "msgs": {},
     "end": None,
     "text": "",
     "winners": 0,
-    "active": False
+    "active": False,
+    "last_winners": []
 }
 
 # ======================
-# FORMAT TIME
+# FILE ID
 # ======================
-def format_time(s: int):
-    h = s // 3600
-    m = (s % 3600) // 60
-    s = s % 60
-    return f"{h:02}:{m:02}:{s:02}"
+@dp.message(F.photo)
+async def file_id(message: Message):
+    await message.answer(f"<code>{message.photo[-1].file_id}</code>")
 
 # ======================
-# LIVE LOOP (1 sec update)
+# UTIL
+# ======================
+def get_link(cid):
+    return f"https://t.me/c/{str(cid)[4:]}"
+
+def kb():
+    buttons = []
+
+    for cid, name in CHANNELS.items():
+        buttons.append([InlineKeyboardButton(text=name, url=get_link(cid))])
+
+    buttons.append([InlineKeyboardButton(text="🎉 Участвовать", callback_data="join")])
+    buttons.append([InlineKeyboardButton(text="🔄 Проверить", callback_data="check")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+async def is_sub(user_id):
+    for cid in CHANNELS:
+        m = await bot.get_chat_member(cid, user_id)
+        if m.status not in ("member", "creator", "administrator"):
+            return False
+    return True
+
+# ======================
+# JOIN
+# ======================
+@dp.callback_query(F.data == "join")
+async def join(call):
+    if not await is_sub(call.from_user.id):
+        return await call.answer("❌ Нет подписки", show_alert=True)
+
+    cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
+    db.commit()
+
+    await call.answer("🎉 Участвуешь!")
+
+# ======================
+# CHECK
+# ======================
+@dp.callback_query(F.data == "check")
+async def check(call):
+    if await is_sub(call.from_user.id):
+        cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (call.from_user.id,))
+        db.commit()
+        await call.answer("✅ ОК")
+    else:
+        await call.answer("❌ Подпишись", show_alert=True)
+
+# ======================
+# STATS (3)
+# ======================
+@dp.message(F.text == "/stats")
+async def stats(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+    users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+    await m.answer(
+        f"👥 Users: {users}\n📢 Channels: {len(CHANNELS)}\n🎁 Active: {giveaway['active']}"
+    )
+
+# ======================
+# ADD CHANNEL (1)
+# ======================
+@dp.message(F.text.startswith("/addchannel"))
+async def add_channel(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        _, cid, name = m.text.split("|")
+        CHANNELS[int(cid)] = name
+        await m.answer("✅ Added")
+    except:
+        await m.answer("❌ /addchannel|id|name")
+
+# ======================
+# REMOVE CHANNEL (2)
+# ======================
+@dp.message(F.text.startswith("/removechannel"))
+async def remove_channel(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        _, cid = m.text.split("|")
+        CHANNELS.pop(int(cid), None)
+        await m.answer("🗑 Removed")
+    except:
+        await m.answer("❌ /removechannel|id")
+
+# ======================
+# END GIVEAWAY (4)
+# ======================
+@dp.message(F.text == "/end")
+async def end(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+
+    giveaway["active"] = False
+    await m.answer("⛔ Giveaway stopped")
+
+# ======================
+# REROLL (5)
+# ======================
+@dp.message(F.text == "/reroll")
+async def reroll(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+
+    users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+    if not users:
+        return await m.answer("❌ No users")
+
+    winners = random.sample(users, min(3, len(users)))
+    giveaway["last_winners"] = winners
+
+    text = "🎲 REROLL WINNERS:\n\n" + "\n".join(
+        [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
+    )
+
+    await m.answer(text)
+
+# ======================
+# GIVEAWAY START
+# ======================
+@dp.message(F.text.startswith("/giveaway"))
+async def giveaway_cmd(m):
+    try:
+        _, text, winners, minutes = m.text.split("|")
+
+        winners = int(winners)
+        minutes = int(minutes)
+
+        giveaway["msgs"] = {}
+        giveaway["text"] = text
+        giveaway["winners"] = winners
+        giveaway["end"] = datetime.now() + timedelta(minutes=minutes)
+        giveaway["active"] = True
+
+        cur.execute("DELETE FROM users")
+        db.commit()
+
+        for cid in CHANNELS:
+            msg = await bot.send_photo(
+                cid,
+                LOGO,
+                caption=f"🎁 {text}\n⏳ Loading...",
+                reply_markup=kb()
+            )
+            giveaway["msgs"][cid] = msg
+
+        await m.answer("🚀 Started")
+
+    except:
+        await m.answer("❌ /giveaway|text|winners|minutes")
+
+# ======================
+# LIVE LOOP
 # ======================
 async def live():
     while True:
@@ -193,90 +218,27 @@ async def live():
             continue
 
         remaining = int((giveaway["end"] - datetime.now()).total_seconds())
-        if remaining < 0:
-            remaining = 0
-
-        users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-
-        caption = f"""
-🌙 <b>NIGHTBOT GIVEAWAY</b>
-━━━━━━━━━━━━━━
-🎁 <b>{giveaway['text']}</b>
-
-⏱ Осталось: {format_time(remaining)}
-👥 Участников: {users}
-🏆 Победителей: {giveaway['winners']}
-
-━━━━━━━━━━━━━━
-🤖 Nightbot System
-"""
-
-        try:
-            await bot.edit_message_caption(
-                chat_id=giveaway["msg"].chat.id,
-                message_id=giveaway["msg"].message_id,
-                caption=caption,
-                reply_markup=kb()
-            )
-        except:
-            pass
-
-        # FINISH
         if remaining <= 0:
             giveaway["active"] = False
 
-            users_list = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+            users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
 
-            if users_list:
-                winners = random.sample(users_list, min(len(users_list), giveaway["winners"]))
+            if users:
+                winners = random.sample(users, min(len(users), giveaway["winners"]))
 
-                text = "🏆 <b>NIGHTBOT WINNERS</b>\n\n" + "\n".join(
+                text = "🏆 WINNERS:\n\n" + "\n".join(
                     [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
                 )
 
-                await bot.send_message(giveaway["msg"].chat.id, text)
+                for cid in giveaway["msgs"]:
+                    await bot.send_message(cid, text)
 
             cur.execute("DELETE FROM users")
             db.commit()
+            continue
 
 # ======================
-# GIVEAWAY START
-# ======================
-@dp.message(F.text.startswith("/giveaway"))
-async def giveaway_cmd(message: Message):
-    try:
-        _, text, winners, minutes = message.text.split("|")
-
-        winners = int(winners)
-        minutes = int(minutes)
-
-        end_time = datetime.now() + timedelta(minutes=minutes)
-
-        cur.execute("DELETE FROM users")
-        db.commit()
-
-        msg = await message.answer_photo(
-            photo=LOGO if LOGO else "https://i.imgur.com/8Km9tLL.jpg",
-            caption="🌙 <b>NIGHTBOT</b>\n⏳ Загрузка...",
-            reply_markup=kb()
-        )
-
-        giveaway.update({
-            "msg": msg,
-            "end": end_time,
-            "text": text,
-            "winners": winners,
-            "active": True
-        })
-
-        await message.answer("🚀 Giveaway запущен")
-
-    except Exception as e:
-        await message.answer("❌ Формат:\n/giveaway|текст|победители|минуты")
-        print(e)
-
-# ======================
-# START BOT
+# MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
