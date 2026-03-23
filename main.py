@@ -11,7 +11,6 @@ from aiogram.enums import ParseMode
 
 # ======================
 TOKEN = os.getenv("BOT_TOKEN")
-
 ADMIN_ID = 7468497968
 
 LOGO = "AgACAgIAAxkBAAIBEmnBGRn8bTmeyYndGFAFwf3HNjg5AAL1FGsbHMMISofDqjxORKtwAQADAgADdwADOgQ"
@@ -25,77 +24,59 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ======================
-# DB
+DB
 # ======================
 db = sqlite3.connect("db.sqlite")
 cur = db.cursor()
-
 cur.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)")
 db.commit()
 
 # ======================
-# STATE
+STATE ENGINE
 # ======================
 giveaway = {
-    "msgs": {},
+    "active": False,
+    "paused": False,
     "end": None,
     "text": "",
     "winners": 0,
-    "active": False
+    "msgs": {},
 }
 
 # ======================
-# FILE ID GETTER
+FILE ID HELPER
 # ======================
 @dp.message(F.photo)
-async def file_id(message: Message):
-    await message.answer(message.photo[-1].file_id)
+async def file_id(m: Message):
+    await m.answer(f"<code>{m.photo[-1].file_id}</code>")
 
 # ======================
-# TEST
+TIME FORMAT
 # ======================
-@dp.message(F.text == "/test")
-async def test(m):
-    await m.answer("✅ Bot alive")
+def format_time(s):
+    h = s // 3600
+    m = (s % 3600) // 60
+    s = s % 60
+    return f"{h:02}ч {m:02}м {s:02}с"
 
 # ======================
-# STATS
-# ======================
-@dp.message(F.text == "/stats")
-async def stats(m):
-    if m.from_user.id != ADMIN_ID:
-        return
-
-    users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-
-    await m.answer(
-        f"👥 Users: {users}\n📢 Channels: {len(CHANNELS)}\n🎁 Active: {giveaway['active']}"
-    )
-
-# ======================
-# LINK
-# ======================
-def link(cid):
-    return f"https://t.me/c/{str(cid)[4:]}"
-
-# ======================
-# KEYBOARD
+KB
 # ======================
 def kb():
-    buttons = []
-
+    btn = []
     for cid, name in CHANNELS.items():
-        buttons.append([InlineKeyboardButton(text=name, url=link(cid))])
+        btn.append([InlineKeyboardButton(text=f"📢 {name}", url=f"https://t.me/c/{str(cid)[4:]}")])
 
-    buttons.append([InlineKeyboardButton(text="🎉 Join", callback_data="join")])
-    buttons.append([InlineKeyboardButton(text="🔄 Check", callback_data="check")])
+    btn.append([InlineKeyboardButton("🎉 Участвовать", callback_data="join")])
+    btn.append([InlineKeyboardButton("🔄 Проверить", callback_data="check")])
+    btn.append([InlineKeyboardButton("📤 Поделиться", switch_inline_query="Я участвую в розыгрыше!")])
 
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return InlineKeyboardMarkup(inline_keyboard=btn)
 
 # ======================
-# CHECK SUB
+CHECK SUB
 # ======================
-async def check_sub(user_id):
+async def sub(user_id):
     try:
         for cid in CHANNELS:
             m = await bot.get_chat_member(cid, user_id)
@@ -106,75 +87,95 @@ async def check_sub(user_id):
         return False
 
 # ======================
-# JOIN
+JOIN
 # ======================
 @dp.callback_query(F.data == "join")
 async def join(c):
-    if not await check_sub(c.from_user.id):
-        return await c.answer("❌ No subscription", show_alert=True)
+    if not await sub(c.from_user.id):
+        return await c.answer("❌ Подпишись", show_alert=True)
 
     cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (c.from_user.id,))
     db.commit()
-
-    await c.answer("🎉 Joined")
+    await c.answer("🎉 Ты участвуешь!")
 
 # ======================
-# CHECK
+CHECK
 # ======================
 @dp.callback_query(F.data == "check")
 async def check(c):
-    if await check_sub(c.from_user.id):
+    if await sub(c.from_user.id):
         cur.execute("INSERT OR IGNORE INTO users VALUES (?)", (c.from_user.id,))
         db.commit()
-        await c.answer("✅ OK")
+        await c.answer("✅ Ок")
     else:
-        await c.answer("❌ Subscribe first", show_alert=True)
+        await c.answer("❌ Нет подписки", show_alert=True)
 
 # ======================
-# GIVEAWAY START
+CONTROL COMMANDS
+# ======================
+@dp.message(F.text == "/pause")
+async def pause(m):
+    if m.from_user.id == ADMIN_ID:
+        giveaway["paused"] = True
+        await m.answer("⏸ Пауза")
+
+@dp.message(F.text == "/resume")
+async def resume(m):
+    if m.from_user.id == ADMIN_ID:
+        giveaway["paused"] = False
+        await m.answer("▶️ Продолжено")
+
+@dp.message(F.text == "/end")
+async def end(m):
+    if m.from_user.id == ADMIN_ID:
+        giveaway["active"] = False
+        await m.answer("⛔ Завершено")
+
+@dp.message(F.text == "/reroll")
+async def reroll(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+
+    users = [u[0] for u in cur.execute("SELECT user_id FROM users").fetchall()]
+    if users:
+        w = random.sample(users, min(len(users), giveaway["winners"]))
+        text = "🏆 NEW WINNERS:\n\n" + "\n".join([f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in w])
+        for cid in giveaway["msgs"]:
+            await bot.send_message(cid, text)
+
+# ======================
+START GIVEAWAY
 # ======================
 @dp.message(F.text.startswith("/giveaway"))
-async def giveaway_cmd(m):
-    try:
-        _, text, winners, minutes = m.text.split("|")
+async def start(m):
+    _, text, winners, minutes = m.text.split("|")
 
-        winners = int(winners)
-        minutes = int(minutes)
+    giveaway.update({
+        "active": True,
+        "paused": False,
+        "text": text,
+        "winners": int(winners),
+        "end": datetime.now() + timedelta(minutes=int(minutes)),
+        "msgs": {}
+    })
 
-        giveaway["msgs"] = {}
-        giveaway["text"] = text
-        giveaway["winners"] = winners
-        giveaway["end"] = datetime.now() + timedelta(minutes=minutes)
-        giveaway["active"] = True
+    cur.execute("DELETE FROM users")
+    db.commit()
 
-        cur.execute("DELETE FROM users")
-        db.commit()
+    for cid in CHANNELS:
+        msg = await bot.send_photo(cid, LOGO, caption="🎁 РОЗЫГРЫШ ЗАПУЩЕН", reply_markup=kb())
+        giveaway["msgs"][cid] = msg
 
-        caption = f"🎁 {text}\n⏳ Starting..."
-
-        # SEND TO ALL CHANNELS
-        for cid in CHANNELS:
-            msg = await bot.send_photo(
-                cid,
-                LOGO,
-                caption=caption,
-                reply_markup=kb()
-            )
-            giveaway["msgs"][cid] = msg
-
-        await m.answer("🚀 Giveaway started")
-
-    except:
-        await m.answer("❌ /giveaway|text|winners|minutes")
+    await m.answer("🚀 Запущено")
 
 # ======================
-# LIVE ENGINE (FIXED)
+LIVE ENGINE (PRO)
 # ======================
 async def live():
     while True:
         await asyncio.sleep(1)
 
-        if not giveaway["active"]:
+        if not giveaway["active"] or giveaway["paused"]:
             continue
 
         remaining = int((giveaway["end"] - datetime.now()).total_seconds())
@@ -187,7 +188,7 @@ async def live():
             if users:
                 winners = random.sample(users, min(len(users), giveaway["winners"]))
 
-                text = "🏆 WINNERS:\n\n" + "\n".join(
+                text = "🏆 ПОБЕДИТЕЛИ:\n\n" + "\n".join(
                     [f"👤 <a href='tg://user?id={u}'>Winner</a>" for u in winners]
                 )
 
@@ -200,27 +201,32 @@ async def live():
 
         users_count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
-        caption = f"""
-🎁 <b>{giveaway['text']}</b>
-
-⏱ Time: {remaining}s
-👥 Users: {users_count}
-🏆 Winners: {giveaway['winners']}
-"""
+        caption = (
+            f"🎁 <b>{giveaway['text']}</b>\n\n"
+            f"⏳ Таймер: {format_time(remaining)}\n"
+            f"👥 Участники: {users_count}\n"
+            f"🏆 Победители: {giveaway['winners']}\n"
+            f"{'⏸ ПАУЗА' if giveaway['paused'] else '🔥 ИДЁТ'}"
+        )
 
         for cid, msg in giveaway["msgs"].items():
             try:
-                await bot.edit_message_caption(
-                    chat_id=cid,
-                    message_id=msg.message_id,
-                    caption=caption,
-                    reply_markup=kb()
-                )
+                await bot.edit_message_caption(cid, msg.message_id, caption, reply_markup=kb())
             except:
                 pass
 
 # ======================
-# MAIN
+STATS
+# ======================
+@dp.message(F.text == "/stats")
+async def stats(m):
+    if m.from_user.id != ADMIN_ID:
+        return
+    users = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    await m.answer(f"👥 {users}\n📢 {len(CHANNELS)}\n🎁 {giveaway['active']}")
+
+# ======================
+MAIN
 # ======================
 async def main():
     asyncio.create_task(live())
