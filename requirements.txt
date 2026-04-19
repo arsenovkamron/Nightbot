@@ -1,2 +1,3 @@
-aiogram==3.4.1
-aiosqlite
+aiogram==3.20.0.post0
+aiohttp==3.12.14
+aiosqlite==0.21.0
